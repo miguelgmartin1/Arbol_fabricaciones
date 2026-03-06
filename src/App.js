@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import rawData from './data/treeData.json';
+import React, { useState, useMemo, useEffect } from 'react';
+import fallbackData from './data/treeData.json';
 import TreeView from './components/TreeView';
 import ExclusionesPanel from './components/ExclusionesPanel';
 import SummaryPanel from './components/SummaryPanel';
@@ -7,15 +7,54 @@ import SearchBar from './components/SearchBar';
 import { buildTree, computeTreeStats } from './utils/treeUtils';
 import './App.css';
 
+const API_URL    = process.env.REACT_APP_API_URL;
+const ROOT_ID    = process.env.REACT_APP_ROOT_ID || '47201';
+
 export default function App() {
-  const [exclusiones, setExclusiones] = useState(rawData.exclusiones);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('arbol'); // 'arbol' | 'exclusiones' | 'resumen'
-  const [expandedNodes, setExpandedNodes] = useState(new Set(['47201']));
+  // Si hay API configurada, empieza con null y carga desde el servidor.
+  // En desarrollo local sin servidor, usa el JSON estático como fallback.
+  const [rawData,    setRawData]    = useState(API_URL ? null : fallbackData);
+  const [loading,    setLoading]    = useState(!!API_URL);
+  const [error,      setError]      = useState(null);
+  const [exclusiones, setExclusiones] = useState(null);
+  const [searchTerm,  setSearchTerm]  = useState('');
+  const [activeTab,   setActiveTab]   = useState('arbol');
+  const [expandedNodes, setExpandedNodes] = useState(new Set([ROOT_ID]));
   const [highlightedNode, setHighlightedNode] = useState(null);
 
-  const tree = useMemo(() => buildTree(rawData.tree), []);
-  const stats = useMemo(() => computeTreeStats(rawData.tree, rawData.aceite_en_origen), []);
+  // Carga desde la API (solo cuando REACT_APP_API_URL está definido)
+  useEffect(() => {
+    if (!API_URL) return;
+
+    setLoading(true);
+    setError(null);
+
+    fetch(`${API_URL}/api/arbol/${ROOT_ID}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`Error ${r.status}: ${r.statusText}`);
+        return r.json();
+      })
+      .then(data => {
+        setRawData(data);
+        setExclusiones(data.exclusiones);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error cargando datos:', err);
+        setError(err.message);
+        setLoading(false);
+      });
+  }, []);
+
+  // Inicializar exclusiones desde el JSON estático (modo sin API)
+  useEffect(() => {
+    if (!API_URL && rawData && !exclusiones) {
+      setExclusiones(rawData.exclusiones);
+    }
+  }, [rawData, exclusiones]);
+
+  const tree  = useMemo(() => rawData ? buildTree(rawData.tree) : [], [rawData]);
+  const stats = useMemo(() => rawData ? computeTreeStats(rawData.tree, rawData.aceite_en_origen) : null, [rawData]);
 
   const toggleNode = (id) => {
     setExpandedNodes(prev => {
@@ -27,14 +66,45 @@ export default function App() {
   };
 
   const expandAll = () => {
+    if (!rawData) return;
     const allIds = new Set(rawData.tree.map(r => String(r.parent_id)));
     setExpandedNodes(allIds);
   };
 
   const collapseAll = () => {
-    setExpandedNodes(new Set(['47201']));
+    setExpandedNodes(new Set([ROOT_ID]));
   };
 
+  // ── Estados de carga / error ───────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="app">
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: '1rem' }}>
+          <span style={{ fontSize: '2rem' }}>🌳</span>
+          <p style={{ color: '#94a3b8' }}>Cargando árbol de trazabilidad…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="app">
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: '1rem' }}>
+          <span style={{ fontSize: '2rem' }}>⚠️</span>
+          <p style={{ color: '#f87171' }}>No se pudo conectar con la API</p>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{error}</p>
+          <button onClick={() => window.location.reload()} style={{ padding: '0.5rem 1.5rem', borderRadius: '6px', cursor: 'pointer' }}>
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!rawData || !exclusiones) return null;
+
+  // ── UI principal ───────────────────────────────────────────────────────────
   return (
     <div className="app">
       <header className="app-header">
@@ -93,7 +163,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'resumen' && (
+        {activeTab === 'resumen' && stats && (
           <SummaryPanel stats={stats} treeData={rawData.tree} aceiteEnOrigen={rawData.aceite_en_origen} />
         )}
 
