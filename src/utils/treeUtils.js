@@ -4,7 +4,6 @@
  * Root nodes are those whose parent_id does not appear as any process_id.
  */
 export function buildTree(records) {
-  const nodeMap = {};
   const childrenMap = {};
 
   // First pass: identify all process_ids

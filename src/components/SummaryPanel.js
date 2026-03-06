@@ -1,5 +1,5 @@
 import React from 'react';
-import { fmt, fmtPct } from '../utils/treeUtils';
+import { fmt } from '../utils/treeUtils';
 
 function StatCard({ label, value, sub, color, icon }) {
   return (
